@@ -59,6 +59,9 @@ class SystemFileSystem:
     def write_file(self, path: str, content: bytes) -> None:
         raise VFSError("read_only", "System filesystem is read-only")
 
+    def append_file(self, path: str, content: bytes) -> int:
+        raise VFSError("read_only", "System filesystem is read-only")
+
     def mkdir(self, path: str) -> None:
         raise VFSError("read_only", "System filesystem is read-only")
 

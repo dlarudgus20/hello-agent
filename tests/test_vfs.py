@@ -346,7 +346,7 @@ def test_new_default_readme_and_user_changes_persist():
     fs.write_file("/README.txt", b"user edited")
     assert create_vfs().read_file("/README.txt") == b"user edited"
     fs.remove("/README.txt")
-    assert [e.name for e in create_vfs().listdir("/")] == ["sys"]
+    assert [e.name for e in create_vfs().listdir("/")] == ["home", "sys"]
 
 
 def test_default_bootstrap_does_not_modify_existing_db():
@@ -355,7 +355,7 @@ def test_default_bootstrap_does_not_modify_existing_db():
     existing = SQLiteFileSystem(VFS_DATABASE)
     existing.write_file("/mine", b"keep")
     fs = create_vfs()
-    assert [e.name for e in fs.listdir("/")] == ["mine", "sys"]
+    assert [e.name for e in fs.listdir("/")] == ["home", "mine", "sys"]
     assert fs.read_file("/mine") == b"keep"
 
 

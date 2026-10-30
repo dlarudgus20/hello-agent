@@ -115,7 +115,25 @@ class ToolShell:
         return True
 
     def display(self, name: str, result) -> None:
-        if name in ("read_file", "search_files"):
+        if name in ("exec", "exec_input"):
+            for stream in ("stdout", "stderr"):
+                content = result.get(stream, "")
+                if content:
+                    self.console.print(
+                        Text(content, style="red" if stream == "stderr" else None),
+                        end="",
+                        soft_wrap=True,
+                    )
+                    if not content.endswith("\n"):
+                        self.console.print()
+            table = Table("속성", "값", border_style="cyan")
+            for key, value in result.items():
+                if key not in ("stdout", "stderr", "status"):
+                    table.add_row(
+                        Text(key), Text(json.dumps(value, ensure_ascii=False))
+                    )
+            self.console.print(table)
+        elif name in ("read_file", "search_files"):
             if name == "read_file":
                 for line in result["lines"]:
                     rendered = Text(f"{line['line_number']} | ", style="cyan")
@@ -175,17 +193,20 @@ def run_shell(
     shell = ToolShell(
         registry if registry is not None else create_registry(), console or Console()
     )
-    shell.console.print("도구 셸입니다. help: 도움말, exit: 종료.")
-    while True:
-        try:
+    try:
+        shell.console.print("도구 셸입니다. help: 도움말, exit: 종료.")
+        while True:
             try:
-                words = read_command()
-            except EOFError:
-                shell.console.print()
-                break
-            if not shell.execute(words):
-                break
-        except KeyboardInterrupt:
-            Console(stderr=True).print("\n명령을 중단했습니다.")
-        except EXPECTED_ERRORS as exc:
-            report_error(exc)
+                try:
+                    words = read_command()
+                except EOFError:
+                    shell.console.print()
+                    break
+                if not shell.execute(words):
+                    break
+            except KeyboardInterrupt:
+                Console(stderr=True).print("\n명령을 중단했습니다.")
+            except EXPECTED_ERRORS as exc:
+                report_error(exc)
+    finally:
+        shell.registry.close()

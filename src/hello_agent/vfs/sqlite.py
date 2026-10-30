@@ -216,6 +216,35 @@ class SQLiteFileSystem:
                     (path, parent, name, content),
                 )
 
+    def append_file(self, path: str, content: bytes) -> int:
+        """Append, creation, and quota checks share one SQLite transaction."""
+        path = normalize_path(path)
+        if not isinstance(content, bytes):
+            raise TypeError("File content must be bytes")
+        with self._transaction() as (db, limits):
+            row = db.execute(
+                "SELECT kind, data FROM entries WHERE path=?", (path,)
+            ).fetchone()
+            if row is not None and row["kind"] != "file":
+                raise VFSError("is_directory", f"Cannot append to directory: {path!r}")
+            original = bytes(row["data"]) if row is not None else b""
+            size = len(original) + len(content)
+            if size > limits.max_file_bytes:
+                raise VFSError(
+                    "file_too_large", f"File limit is {limits.max_file_bytes} bytes"
+                )
+            if row is None:
+                parent, name = self._check_new_entry(db, path, limits)
+                db.execute(
+                    "INSERT INTO entries VALUES (?,?,?,'file',?)",
+                    (path, parent, name, content),
+                )
+            else:
+                db.execute(
+                    "UPDATE entries SET data=? WHERE path=?", (original + content, path)
+                )
+            return size
+
     def edit_file(self, path: str, edits: list[dict]) -> int:
         path = normalize_path(path)
         with self._transaction() as (db, limits):

@@ -91,7 +91,13 @@ def search_files(
     skipped = {}
 
     def skip(path, exc):
-        if exc.code not in ("not_found", "not_directory", "is_directory", "not_text"):
+        if exc.code not in (
+            "not_found",
+            "not_directory",
+            "is_directory",
+            "not_text",
+            "not_readable",
+        ):
             raise exc
         skipped[path] = {"path": path, "reason": exc.code}
 

@@ -62,7 +62,11 @@ def test_file_tools_and_shared_registry(monkeypatch):
     )
     shell.run_shell(console=console)
     assert "안녕하세요" in output.getvalue()
-    assert [e.name for e in vfs.create_vfs().listdir("/")] == ["README.txt", "sys"]
+    assert [e.name for e in vfs.create_vfs().listdir("/")] == [
+        "README.txt",
+        "home",
+        "sys",
+    ]
 
 
 def test_quoting_empty_content_and_multiline(monkeypatch):
@@ -191,7 +195,11 @@ def test_eof_in_unfinished_quote_discards_input(monkeypatch, capsys):
     feed(monkeypatch, ['write_file /unfinished "never finished', EOFError()])
     shell.run_shell(console=terminal()[1])
     assert "따옴표가 닫히지 않아" in capsys.readouterr().err
-    assert [e.name for e in vfs.create_vfs().listdir("/")] == ["README.txt", "sys"]
+    assert [e.name for e in vfs.create_vfs().listdir("/")] == [
+        "README.txt",
+        "home",
+        "sys",
+    ]
 
 
 def test_ctrl_c_cancels_multiline_and_returns_to_prompt(monkeypatch, capsys):
@@ -204,7 +212,11 @@ def test_ctrl_c_cancels_multiline_and_returns_to_prompt(monkeypatch, capsys):
     assert prompts == ["sh> ", "...> ", "sh> ", "sh> "]
     assert "중단" in capsys.readouterr().err
     assert "Read a UTF-8 virtual file" in output.getvalue()
-    assert [e.name for e in vfs.create_vfs().listdir("/")] == ["README.txt", "sys"]
+    assert [e.name for e in vfs.create_vfs().listdir("/")] == [
+        "README.txt",
+        "home",
+        "sys",
+    ]
 
 
 def test_ctrl_c_during_tool_execution_continues(monkeypatch, capsys):

@@ -6,6 +6,7 @@ from typing import Any
 
 from . import text_files
 from .errors import ToolError
+from .processes import ProcessManager
 from .vfs import VFSError, VirtualFileSystem, create_vfs
 from .vfs.core import normalize_path
 
@@ -50,6 +51,17 @@ class Tool:
 class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
+        self.processes: ProcessManager | None = None
+
+    def close(self) -> None:
+        if self.processes is not None:
+            self.processes.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
     def register(self, tool: Tool) -> None:
         if tool.name in self._tools:
@@ -72,6 +84,17 @@ class ToolRegistry:
 def create_registry(vfs: VirtualFileSystem | None = None) -> ToolRegistry:
     vfs = vfs if vfs is not None else create_vfs()
     registry = ToolRegistry()
+    if vfs.processes is None:
+        vfs.processes = ProcessManager(vfs)
+    registry.processes = vfs.processes
+
+    def exec(path: str, args: list[str] | None = None, background: bool = False):
+        return registry.processes.start(path, args, background)
+
+    def exec_input(
+        pid: int, input: str = "", eof: bool = False, background: bool = False
+    ):
+        return registry.processes.input(pid, input, eof, background)
 
     def ls(path: str):
         path = normalize_path(path)
@@ -118,6 +141,50 @@ def create_registry(vfs: VirtualFileSystem | None = None) -> ToolRegistry:
         "type": "string",
         "description": "Absolute path in the virtual filesystem (not a host path)",
     }
+    background_schema = {
+        "type": "boolean",
+        "default": False,
+        "description": "Return immediately in background; false waits for input or exit and collects an exited process",
+    }
+    registry.register(
+        Tool(
+            "exec",
+            "Execute a UTF-8 .lua virtual file in an isolated Lua 5.4 process. Foreground returns at input wait or exit; background returns immediately. Lua return values are ignored; os.exit sets the exit code",
+            {
+                "type": "object",
+                "properties": {
+                    "path": path_schema,
+                    "args": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": [],
+                    },
+                    "background": background_schema,
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            exec,
+        )
+    )
+    registry.register(
+        Tool(
+            "exec_input",
+            "Send literal stdin to a Lua process and choose foreground or background. No newline is added. Empty input can attach without sending data; EOF permanently closes stdin. Foreground returns at the next input wait or exit",
+            {
+                "type": "object",
+                "properties": {
+                    "pid": {"type": "integer", "minimum": 1},
+                    "input": {"type": "string", "default": ""},
+                    "eof": {"type": "boolean", "default": False},
+                    "background": background_schema,
+                },
+                "required": ["pid"],
+                "additionalProperties": False,
+            },
+            exec_input,
+        )
+    )
     for name, description, handler in [
         (
             "ls",

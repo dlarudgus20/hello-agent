@@ -79,6 +79,7 @@ class FileSystem(Protocol):
     def listdir(self, path: str) -> list[Entry]: ...
     def read_file(self, path: str) -> bytes: ...
     def write_file(self, path: str, content: bytes) -> None: ...
+    def append_file(self, path: str, content: bytes) -> int: ...
     def edit_file(self, path: str, edits: list[dict]) -> int: ...
     def mkdir(self, path: str) -> None: ...
     def remove(self, path: str) -> None: ...
@@ -101,6 +102,7 @@ class VirtualFileSystem:
 
     def __init__(self):
         self._mounts: dict[str, Mount] = {}
+        self.processes = None
 
     def mount(self, path: str, backend: FileSystem, *, name: str | None = None) -> None:
         path = normalize_path(path)
@@ -184,6 +186,17 @@ class VirtualFileSystem:
         backend, relative, _ = self._resolve(path)
         self._writable(backend)
         backend.write_file(relative, content)
+
+    def append_file(self, path: str, content: bytes) -> int:
+        backend, relative, _ = self._resolve(path)
+        self._writable(backend)
+        return backend.append_file(relative, content)
+
+    def is_stream(self, path: str) -> bool:
+        """Generated write endpoints do not have normal file truncation semantics."""
+        backend, relative, _ = self._resolve(path)
+        check = getattr(backend, "is_stream", None)
+        return check(relative) if check is not None else False
 
     def mkdir(self, path: str) -> None:
         backend, relative, _ = self._resolve(path)

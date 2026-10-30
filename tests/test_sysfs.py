@@ -24,9 +24,14 @@ def info(vfs, name="root"):
 
 def test_default_sysfs_and_live_usage():
     vfs = create_vfs()
-    assert [e.name for e in vfs.listdir("/")] == ["README.txt", "sys"]
-    assert [e.name for e in vfs.listdir("/sys")] == ["fs"]
-    assert [e.name for e in vfs.listdir("/sys/fs")] == ["root.json", "sys.json"]
+    assert [e.name for e in vfs.listdir("/")] == ["README.txt", "home", "sys"]
+    assert [e.name for e in vfs.listdir("/sys")] == ["fs", "proc"]
+    assert [e.name for e in vfs.listdir("/sys/fs")] == [
+        "home.json",
+        "proc.json",
+        "root.json",
+        "sys.json",
+    ]
     assert info(vfs) == {
         "mount": "/",
         "backend": "sqlite",
@@ -39,7 +44,7 @@ def test_default_sysfs_and_live_usage():
         "mount": "/sys",
         "backend": "sysfs",
         "read_only": True,
-        "entries": 4,
+        "entries": 6,
         "file_bytes": None,
         "limits": None,
     }
@@ -62,11 +67,20 @@ def test_new_mounts_and_nested_mounts_are_discoverable(tmp_path):
     vfs.mount("/notes", notes)
     vfs.mount("/notes/cache", SQLiteFileSystem(tmp_path / "cache.sqlite3"))
     vfs.write_file("/notes/data", b"abc")
-    assert [m.name for m in snapshot] == ["root", "sys"]
-    assert [m.path for m in vfs.mounts()] == ["/", "/notes", "/notes/cache", "/sys"]
+    assert [m.name for m in snapshot] == ["root", "home", "sys", "proc"]
+    assert [m.path for m in vfs.mounts()] == [
+        "/",
+        "/home",
+        "/notes",
+        "/notes/cache",
+        "/sys",
+        "/sys/proc",
+    ]
     assert [e.name for e in vfs.listdir("/sys/fs")] == [
         "cache.json",
+        "home.json",
         "notes.json",
+        "proc.json",
         "root.json",
         "sys.json",
     ]
@@ -77,7 +91,7 @@ def test_new_mounts_and_nested_mounts_are_discoverable(tmp_path):
     assert info(vfs, "notes")["file_bytes"] == 3
     assert info(vfs, "notes")["limits"] == {"max_file_bytes": 32, "max_entries": 5}
     assert info(vfs, "cache")["mount"] == "/notes/cache"
-    assert info(vfs, "sys")["entries"] == 6
+    assert info(vfs, "sys")["entries"] == 8
     assert [e.name for e in vfs.listdir("/notes")] == ["cache", "data"]
     assert info(vfs)["entries"] == 2
 
@@ -144,7 +158,7 @@ def test_invalid_mount_names(tmp_path, name):
     name = 42 if name is None else name
     with pytest.raises(VFSError, match="invalid_mount_name|invalid_path"):
         vfs.mount("/new", SQLiteFileSystem(tmp_path / "new.sqlite3"), name=name)
-    assert [m.name for m in vfs.mounts()] == ["root", "sys"]
+    assert [m.name for m in vfs.mounts()] == ["root", "home", "sys", "proc"]
 
 
 def test_existing_directory_mount_is_still_supported(tmp_path):
@@ -153,7 +167,7 @@ def test_existing_directory_mount_is_still_supported(tmp_path):
     vfs.write_file("/notes/hidden", b"old")
     vfs.mount("/notes", SQLiteFileSystem(tmp_path / "notes.sqlite3"))
     assert vfs.listdir("/notes") == []
-    assert [e.name for e in vfs.listdir("/")] == ["README.txt", "notes", "sys"]
+    assert [e.name for e in vfs.listdir("/")] == ["README.txt", "home", "notes", "sys"]
     assert info(vfs)["entries"] == 4  # Physical entries remain in their parent volume.
 
 
@@ -161,6 +175,8 @@ def test_fs_info_removed_and_sysfs_accessible_through_existing_tools():
     registry = create_registry()
     specs = registry.specifications()
     assert {s["name"] for s in specs} == {
+        "exec",
+        "exec_input",
         "ls",
         "read_file",
         "search_files",
@@ -173,7 +189,12 @@ def test_fs_info_removed_and_sysfs_accessible_through_existing_tools():
     with pytest.raises(ToolError, match="Unknown tool"):
         registry.execute("fs_info", "{}")
     entries = json.loads(registry.execute("ls", '{"path":"/sys/fs"}'))["entries"]
-    assert [e["name"] for e in entries] == ["root.json", "sys.json"]
+    assert [e["name"] for e in entries] == [
+        "home.json",
+        "proc.json",
+        "root.json",
+        "sys.json",
+    ]
     payload = json.loads(registry.execute("read_file", '{"path":"/sys/fs/root.json"}'))
     assert (
         json.loads("\n".join(line["text"] for line in payload["lines"]))["limits"][

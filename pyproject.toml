@@ -12,6 +12,7 @@ dependencies = [
     "cryptography>=50.0.2",
     "filelock>=4.2.5",
     "keyring>=25.7.0",
+    "lupa>=2.8,<3",
     "openai>=3.41.0",
     "platformdirs>=4.14.0",
     "pyjwt[crypto]>=2.15.1",

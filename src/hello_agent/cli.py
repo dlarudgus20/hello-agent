@@ -9,6 +9,7 @@ from .context import estimate, input_items, turns
 from .errors import EXPECTED_ERRORS, AppError, report_error
 from .history import HistoryState, HistoryStore
 from .history_view import print_history
+from .tool_trace import ToolTrace
 from .tools import create_registry
 from .vfs import VirtualFileSystem
 
@@ -119,7 +120,11 @@ def _main():
         elif args.context_command == "compact":
             state = HistoryStore().load()
             if state.items or state.summary:
-                create_agent().compact()
+                agent = create_agent()
+                try:
+                    agent.compact()
+                finally:
+                    agent.close()
             else:
                 print("압축할 대화 기록이 없습니다.")
         elif args.context_command == "set-threshold":
@@ -213,58 +218,65 @@ def create_agent() -> Agent:
         history=HistoryStore(),
         compact_threshold=compact_threshold,
         reasoning_effort=reasoning_effort,
+        tool_trace=ToolTrace(),
     )
 
 
 def ask(message: str) -> None:
     agent = create_agent()
-    agent.run(message)
+    try:
+        agent.run(message)
+    finally:
+        agent.close()
 
 
 def chat() -> None:
     agent = create_agent()
+    agent.answer_prefix = "AI> "
 
-    print(f"Chat started (model: {agent.model})")
-    print("Commands: /exit, /clear, /context, /compact")
-    print()
+    try:
+        print(f"Chat started (model: {agent.model})")
+        print("Commands: /exit, /clear, /context, /compact")
+        print()
 
-    while True:
-        try:
-            message = input("You> ").strip()
-        except EOFError, KeyboardInterrupt:
-            print()
-            break
+        while True:
+            try:
+                message = input("You> ").strip()
+            except EOFError, KeyboardInterrupt:
+                print()
+                break
 
-        if not message:
-            continue
-
-        if message == "/exit":
-            break
-
-        try:
-            if message == "/clear":
-                agent.clear()
-                print("History cleared.")
+            if not message:
                 continue
-            if message == "/context":
-                show_context(
-                    agent.store.load(),
-                    model=agent.model,
-                    threshold=agent.compact_threshold,
-                )
-                continue
-            if message == "/compact":
-                if not agent.compact():
-                    print("압축할 대화 기록이 없습니다.")
-                continue
-            print("AI> ", end="", flush=True)
-            agent.run(message)
-        except KeyboardInterrupt:
-            print("\nInterrupted. Turn not saved.")
-        except EXPECTED_ERRORS as exc:
-            report_error(exc)
 
-    print("Goodbye.")
+            if message == "/exit":
+                break
+
+            try:
+                if message == "/clear":
+                    agent.clear()
+                    print("History cleared.")
+                    continue
+                if message == "/context":
+                    show_context(
+                        agent.store.load(),
+                        model=agent.model,
+                        threshold=agent.compact_threshold,
+                    )
+                    continue
+                if message == "/compact":
+                    if not agent.compact():
+                        print("압축할 대화 기록이 없습니다.")
+                    continue
+                agent.run(message)
+            except KeyboardInterrupt:
+                print("\nInterrupted. Turn not saved.")
+            except EXPECTED_ERRORS as exc:
+                report_error(exc)
+
+        print("Goodbye.")
+    finally:
+        agent.close()
 
 
 def clear_history() -> None:

@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from copy import deepcopy
 from functools import wraps
 
@@ -14,6 +15,7 @@ from .context import (
 from .errors import AppError, ToolError
 from .history import HistoryState, HistoryStore
 from .settings import DEFAULT_COMPACT_THRESHOLD
+from .tool_trace import ToolTrace
 from .tools import ToolRegistry
 
 AGENT_INSTRUCTIONS = """
@@ -59,6 +61,8 @@ class Agent:
         history: HistoryStore,
         compact_threshold: int = DEFAULT_COMPACT_THRESHOLD,
         reasoning_effort: str | None = None,
+        *,
+        tool_trace: ToolTrace | None = None,
     ):
         self.client = client
         self.model = model
@@ -66,6 +70,8 @@ class Agent:
         self.store = history
         self.compact_threshold = compact_threshold
         self.reasoning_effort = reasoning_effort
+        self.tool_trace = tool_trace
+        self.answer_prefix = ""
 
         state = self.store.load()
         self.history = state.items
@@ -79,6 +85,9 @@ class Agent:
         self.context_items = state.context_items
         self.summary = state.summary
         self.summarized_items = state.summarized_items
+
+    def close(self) -> None:
+        self.tools.close()
 
     def _manager(self):
         return ContextManager(
@@ -188,13 +197,21 @@ class Agent:
                 return
 
             for call in calls:
-                try:
-                    output = self.tools.execute(
-                        call.name,
-                        call.arguments,
-                    )
-                except ToolError as exc:
-                    output = f"Tool execution failed: {exc}"
+                activity = (
+                    self.tool_trace.call(call.name, call.arguments)
+                    if self.tool_trace is not None
+                    else nullcontext()
+                )
+                with activity as progress:
+                    try:
+                        output = self.tools.execute(call.name, call.arguments)
+                    except ToolError as exc:
+                        output = f"Tool execution failed: {exc}"
+                        if progress is not None:
+                            progress.failed(exc)
+                    else:
+                        if progress is not None:
+                            progress.complete(output)
 
                 tool_output = {
                     "type": "function_call_output",
@@ -240,6 +257,15 @@ class Agent:
             printed = False
             completed_items = {}
 
+            def emit(text):
+                nonlocal printed
+                if not text:
+                    return
+                if not printed and self.answer_prefix:
+                    print(self.answer_prefix, end="", flush=True)
+                print(text, end="", flush=True)
+                printed = True
+
             for event in stream:
                 if event.type == "response.output_item.done":
                     completed_items[event.output_index] = event.item
@@ -248,8 +274,7 @@ class Agent:
                     or event.type == "response.refusal.delta"
                 ):
                     if display:
-                        print(event.delta, end="", flush=True)
-                        printed = True
+                        emit(event.delta)
                 elif event.type == "error":
                     raise AppError(f"Response error ({event.code}): {event.message}")
                 elif event.type in ("response.failed", "response.incomplete"):
@@ -298,11 +323,9 @@ class Agent:
                     if item.type == "message":
                         for part in item.content:
                             if part.type == "output_text":
-                                print(part.text, end="", flush=True)
-                                printed = True
+                                emit(part.text)
                             elif part.type == "refusal":
-                                print(part.refusal, end="", flush=True)
-                                printed = True
+                                emit(part.refusal)
 
             if printed:
                 print()

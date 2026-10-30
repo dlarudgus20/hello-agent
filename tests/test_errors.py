@@ -98,6 +98,7 @@ def test_repl_recovers_from_expected_error(monkeypatch, capsys):
         model="test",
         compact=raise_error(status_error()),
         run=lambda _: print("recovered"),
+        close=lambda: None,
     )
     monkeypatch.setattr(cli, "create_agent", lambda: a)
     commands = iter(["/compact", "hello", "/exit"])
@@ -110,7 +111,9 @@ def test_repl_recovers_from_expected_error(monkeypatch, capsys):
 
 
 def test_repl_does_not_swallow_bug(monkeypatch):
-    a = SimpleNamespace(model="test", run=raise_error(TypeError("bug")))
+    a = SimpleNamespace(
+        model="test", run=raise_error(TypeError("bug")), close=lambda: None
+    )
     monkeypatch.setattr(cli, "create_agent", lambda: a)
     monkeypatch.setattr("builtins.input", lambda _: "hello")
     with pytest.raises(TypeError, match="bug"):
